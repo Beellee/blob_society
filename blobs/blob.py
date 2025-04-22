@@ -36,63 +36,67 @@ class Blob:
         dist_sq = sum((self.traits[t] - other.traits[t])**2 for t in TRAITS)
         return -math.sqrt(dist_sq)
 
-    def decide_move(self, blobs):
+    def decide_move(self, blobs, region_centers):
         """
-        If there's a sufficiently similar blob, move toward it.
-        Otherwise, move away from the most dissimilar blob.
+        Move under two influences:
+          - community pull: toward your most-similar blob
+          - region pull: toward the center of your dominant-trait stripe
         """
         if len(blobs) <= 1:
             return
 
+        # --- 1) Community pull ------------------------------------------------
         best_blob = None
-        worst_blob = None
-        best_sim = float('-inf')
-        worst_sim = float('inf')
+        best_sim = -float('inf')
         for b in blobs:
             if b.id == self.id:
                 continue
-            sim = self.similarity(b)
+            sim = -math.sqrt(sum((self.traits[t] - b.traits[t])**2 for t in TRAITS))
             if sim > best_sim:
                 best_sim, best_blob = sim, b
-            if sim < worst_sim:
-                worst_sim, worst_blob = sim, b
 
-        # threshold for "similar enough" (tweakable)
-        threshold = -1.0
+        if not best_blob:
+            return
 
-        if best_sim >= threshold:
-            # move toward the most similar blob
-            target = best_blob
-            direction = (
-                target.position[0] - self.position[0],
-                target.position[1] - self.position[1]
-            )
-        else:
-            # move away from the most dissimilar blob
-            target = worst_blob
-            direction = (
-                self.position[0] - target.position[0],
-                self.position[1] - target.position[1]
-            )
+        # vector toward most‐similar blob
+        dx_c = best_blob.position[0] - self.position[0]
+        dy_c = best_blob.position[1] - self.position[1]
+        dist_c = math.hypot(dx_c, dy_c) or 1e-6
+        vx_c, vy_c = dx_c/dist_c, dy_c/dist_c
 
-        dx, dy = direction
-        dist = math.hypot(dx, dy)
-        if dist < 1e-6:
-            return  # no meaningful direction
+        # --- 2) Region pull ---------------------------------------------------
+        # pick the trait region corresponding to this blob's highest of the four
+        region_traits = list(region_centers.keys())
+        # find dominant among those four
+        dom = max(region_traits, key=lambda tr: self.traits.get(tr, 0))
+        cx, cy = region_centers[dom]
+        dx_r = cx - self.position[0]
+        dy_r = cy - self.position[1]
+        dist_r = math.hypot(dx_r, dy_r) or 1e-6
+        vx_r, vy_r = dx_r/dist_r, dy_r/dist_r
 
-        # normalize and apply movement (faster when fleeing)
-        speed = self.movement_unit if best_sim >= threshold else self.movement_unit * 1.5
-        step_x = (dx / dist) * speed
-        step_y = (dy / dist) * speed
+        # --- 3) Combine & Step ------------------------------------------------
+        w_c, w_r = 0.5, 0.5  # weights for community vs region
+        vx = vx_c * w_c + vx_r * w_r
+        vy = vy_c * w_c + vy_r * w_r
+        norm = math.hypot(vx, vy) or 1e-6
+        vx, vy = vx/norm, vy/norm
 
-        # clamp within bounds
-        new_x = min(max(0, self.position[0] + step_x), self.grid_size - 1)
-        new_y = min(max(0, self.position[1] + step_y), self.grid_size - 1)
+        # move
+        step = self.movement_unit
+        new_x = self.position[0] + vx*step
+        new_y = self.position[1] + vy*step
+
+        # clamp inside [0, grid_size)
+        new_x = min(max(0, new_x), self.grid_size-1)
+        new_y = min(max(0, new_y), self.grid_size-1)
 
         self.position = [new_x, new_y]
-        action = "towards" if best_sim >= threshold else "away from"
-        print(f"Blob {self.id} moved {action} Blob {target.id} → "
-              f"new position: ({new_x:.2f}, {new_y:.2f}) (sim={best_sim:.3f})")
+        print(
+            f"Blob {self.id} → moved (sim={best_sim:.3f}) "
+            f"toward Blob {best_blob.id} & into '{dom}' stripe: "
+            f"new pos=({new_x:.1f},{new_y:.1f})"
+        )
 
     def evaluate_community(self, communities):
         def similarity_to_community(community):

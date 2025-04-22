@@ -70,10 +70,26 @@ def initialize_communities():
     ]
 
 
+
 def main():
     args = parse_args()
     blobs = initialize_blobs(args.num_blobs, args.grid_size)
     communities = initialize_communities()
+
+    # 1a) Define the four traits and stripe height
+    REGION_TRAITS = ['intelligence', 'strength', 'curiosity', 'resilience']
+    stripe_h = args.grid_size / len(REGION_TRAITS)
+
+    # 1b) Compute region centers (x_center, y_center)
+    region_centers = {}
+    for i, trait in enumerate(REGION_TRAITS):
+        y0 = stripe_h * i
+        y1 = stripe_h * (i + 1)
+        region_centers[trait] = (
+            args.grid_size / 2,      # center in x
+            (y0 + y1) / 2            # middle of stripe
+        )
+
     screen, scale = initialize_window(args.grid_size)
     day = 0
 
@@ -92,7 +108,7 @@ def main():
             day += 1
             print(f"\n-- Day {day} --")
             for blob in blobs:
-                blob.decide_move(blobs)
+                blob.decide_move(blobs, region_centers)
                 print(f"Blob {blob.id} moved to {blob.position}")
                 blob.act({'blobs': blobs})
             for c in communities:
